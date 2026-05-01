@@ -181,10 +181,12 @@ export const BubblePopGameController = {
 
       // Update HUD
       const snacksNow = ecsDb.resources.snacksRemaining;
+      const scoreNow = ecsDb.resources.score;
       hudRenderer.update({
         movesRemaining: movesNow,
         snacksRemaining: snacksNow,
         chapterName: 'Creeping Manor',
+        score: scoreNow,
       });
       if (movesNow <= 5) hudRenderer.flashMoves();
 
@@ -274,19 +276,24 @@ export const BubblePopGameController = {
           snacks: Array<{ row: number; col: number }>;
           moveLimit: number;
           snackCount: number;
+          chapterName: string;
         } | null = null;
 
         try {
           const levels = (await import('./data/hand-crafted-levels.json')).default;
-          const level = (levels as typeof levels)[0];
+          const levelIndex = (gameState.level() - 1) % (levels as typeof levels).length;
+          const level = (levels as typeof levels)[levelIndex];
           if (level) {
+            // JSON uses `board` for bubble cells; `cells` is the runtime name
+            const rawBoard = (level as { board?: Array<{ row: number; col: number; flavor: string }> }).board ?? [];
             levelData = {
               cols: level.cols ?? 7,
               rows: level.rows ?? 9,
-              cells: (level as { cells?: Array<{ row: number; col: number; flavor: string }> }).cells ?? [],
+              cells: rawBoard,
               snacks: (level as { snacks?: Array<{ row: number; col: number }> }).snacks ?? [],
               moveLimit: (level as { moveLimit?: number }).moveLimit ?? 35,
               snackCount: (level as { snackCount?: number }).snackCount ?? 3,
+              chapterName: (level as { chapterName?: string }).chapterName ?? 'The Creeping Manor',
             };
           }
         } catch {
@@ -340,7 +347,7 @@ export const BubblePopGameController = {
         // 7. Initialize renderers
         hudRenderer = new HudRenderer();
         hudRenderer.init(viewportW, RESERVED_TOP_PX);
-        hudRenderer.update({ movesRemaining: moveLimit, snacksRemaining: snackCount, chapterName: 'Creeping Manor' });
+        hudRenderer.update({ movesRemaining: moveLimit, snacksRemaining: snackCount, chapterName: levelData?.chapterName ?? 'The Creeping Manor' });
         layers.hud.addChild(hudRenderer.container);
 
         boardRenderer = new BoardRenderer();

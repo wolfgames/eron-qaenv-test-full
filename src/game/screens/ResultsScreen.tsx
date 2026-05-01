@@ -18,12 +18,12 @@ export function ResultsScreen() {
 
   const handleNextLevel = () => {
     gameState.incrementLevel();
-    gameState.reset();
+    gameState.resetSession();
     goto('game');
   };
 
   const handleTryAgain = () => {
-    gameState.reset();
+    gameState.resetSession();
     goto('game');
   };
 

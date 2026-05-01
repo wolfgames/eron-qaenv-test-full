@@ -40,7 +40,7 @@ export interface GeneratedLevel {
     col: number;
     flavor: Flavor;
     entityId: string;
-    isSnoopySnack: boolean;
+    isScoobySnack: boolean;
   }>;
   snacks: Array<{ row: number; col: number; entityId: string; covered: boolean }>;
 }
@@ -97,13 +97,13 @@ function generateBoardAttempt(
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
       const flavor = flavors[Math.floor(rng() * flavorCount)];
-      const isSnoopySnack = snackSet.has(`${row},${col}`);
+      const isScoobySnack = snackSet.has(`${row},${col}`);
       board.push({
         row,
         col,
         flavor,
         entityId: `l${levelNumber}-r${row}c${col}`,
-        isSnoopySnack,
+        isScoobySnack,
       });
     }
   }

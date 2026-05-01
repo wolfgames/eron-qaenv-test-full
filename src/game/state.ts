@@ -37,7 +37,14 @@ export interface GameState {
   chapterName: () => string;
   setChapterName: (name: string) => void;
 
+  /** Full reset including level (returns to level 1). */
   reset: () => void;
+
+  /**
+   * Per-session reset: clears score/outcome/moves/snacks/chapter but
+   * preserves the current level number so Next Level works correctly.
+   */
+  resetSession: () => void;
 }
 
 function createGameState(): GameState {
@@ -76,6 +83,16 @@ function createGameState(): GameState {
     reset: () => {
       setScore(0);
       setLevel(1);
+      setWin(false);
+      setStars(1);
+      setMovesRemaining(0);
+      setSnacksRemaining(0);
+      setChapterName('');
+    },
+
+    resetSession: () => {
+      // Resets per-game state only; level is intentionally preserved.
+      setScore(0);
       setWin(false);
       setStars(1);
       setMovesRemaining(0);

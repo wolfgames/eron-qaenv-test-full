@@ -22,6 +22,7 @@ export class HudRenderer {
 
   movesText: Text;
   snacksText: Text;
+  scoreText: Text;
   private _chapterText: Text;
   private _bg: Graphics;
 
@@ -41,6 +42,9 @@ export class HudRenderer {
 
     // Move counter — right
     this.movesText = new Text('', { fontSize: 22 });
+
+    // Score — bottom of HUD strip
+    this.scoreText = new Text('', { fontSize: 14 });
   }
 
   /**
@@ -68,10 +72,15 @@ export class HudRenderer {
     this.movesText.x = viewportW - 60;
     this.movesText.y = reservedTop / 2 - 14;
 
+    // Score — bottom of HUD, left-aligned below chapter name
+    this.scoreText.x = 12;
+    this.scoreText.y = reservedTop - 18;
+
     this.container.addChild(this._bg);
     this.container.addChild(this._chapterText);
     this.container.addChild(this.snacksText);
     this.container.addChild(this.movesText);
+    this.container.addChild(this.scoreText);
   }
 
   /**
@@ -81,14 +90,19 @@ export class HudRenderer {
     movesRemaining,
     snacksRemaining,
     chapterName,
+    score,
   }: {
     movesRemaining: number;
     snacksRemaining: number;
     chapterName: string;
+    score?: number;
   }): void {
     this._chapterText.text = chapterName;
     this.snacksText.text = `🦴 ×${snacksRemaining}`;
     this.movesText.text = `${movesRemaining}`;
+    if (score !== undefined) {
+      this.scoreText.text = `${score} pts`;
+    }
   }
 
   /**
