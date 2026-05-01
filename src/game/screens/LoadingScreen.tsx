@@ -94,7 +94,8 @@ export function LoadingScreen() {
   });
 
   return (
-    <div class="fixed inset-0 flex flex-col items-center justify-center bg-[#BCE083]">
+    /* Scooby warm mustard yellow theme — #E8A820 harvest orange */
+    <div class="fixed inset-0 flex flex-col items-center justify-center" style={{ background: 'linear-gradient(to bottom, #E8A820, #c4800d)' }}>
       <Show
         when={failedBundles().length === 0}
         fallback={

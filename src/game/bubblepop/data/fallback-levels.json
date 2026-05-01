@@ -1,0 +1,11 @@
+[
+  {
+    "description": "Safe fallback board template — used when procedural generation fails after 10 retries",
+    "cols": 7,
+    "rows": 9,
+    "moveLimit": 40,
+    "snackCount": 2,
+    "ghostCount": 0,
+    "board": "generated-at-runtime"
+  }
+]

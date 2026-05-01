@@ -1,0 +1,17 @@
+run: "01"
+pipeline_version: "0.3.8"
+pass: "core"
+started: "2026-05-01T00:43:28Z"
+config:
+  think_only: false
+  trace: false
+  skip_groups: []
+  allow_skip_pass: false
+
+phases:
+  - id: pass-gate
+    status: complete
+    summary: "core is the first gated pass — no N-1 check required; gate passed automatically"
+
+finished: ""
+status: ""

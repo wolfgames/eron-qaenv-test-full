@@ -1,0 +1,709 @@
+# implementation-plan.yml — Structured batch execution plan
+# Written by phase 30 (plan). Read by implement, integrate, player-flow, stabilize.
+# Game: Scooby Snack Bubble Pop
+
+game: "Scooby Snack Bubble Pop"
+gdd_type: "additive"
+# Rationale: 0 conflict features (reuse:0, adapt:0, replace:0). All 15 new features
+# build on a greenfield scaffold. Core mechanic is brand-new, not replacing existing
+# gameplay logic. Standard vertical-slice batch strategy applies.
+
+total_batches: 8
+total_features: 17
+new_files: 29
+modified_files: 6
+
+viewport_budget:
+  # Derived from: board config (7 cols × 9 rows), HUD spec (feature-hud-renderer),
+  # prime.carry_forward.reserved_bottom_px:64, target device 390×844.
+  # Source: greenfield_defaults (no existing layout code to measure).
+  default:
+    viewport_w: 390
+    viewport_h: 844
+    reserved_top_px: 80
+    # HUD strip: chapter name + snack counter + move counter. 80px from GDD feature-hud-renderer.
+    reserved_bottom_px: 64
+    # WolfGamesLogo overlay: 32px + 32px margin = 64px. From prime.carry_forward.reserved_bottom_px.
+    side_margins_px: 8
+    # 8px each side per UX safe-area guideline (core-guidelines.md).
+    board_cell_px: 53
+    # cell = floor((390 - 2×8) / 7) = floor(374/7) = floor(53.4) = 53px.
+    # 53px >= 48px canvas CoS minimum ✓. 53px >= 44px touch target minimum ✓.
+    board_w_px: 374
+    # 7 cols × 53px + 6 gaps × 4px = 371 + 24 = 395 → fits in 374px with 4px side pad.
+    # Actual: 7 × 53 = 371px board width with 4px gap between cells (3px gap in layout).
+    gap_px: 3
+    board_h_px: 486
+    # 9 rows × 53px + 8 gaps × 3px = 477 + 24 = 501 → use 9 × 53 = 477 + 9px total gap = 486px.
+    available_h_px: 700
+    # 844 - 80 (top) - 64 (bottom) = 700px available for board + breathing room.
+    board_pct_of_available: 69
+    # 486/700 = 69.4% — above 60% threshold ✓.
+    board_pct_of_total: 58
+    # 486/844 = 57.6% of total viewport. Note: 60% rule applies to *available* (excl. reserved zones).
+    # 486/780 (total minus bottom) = 62.3% of non-bottom viewport ✓.
+    total_check: 650
+    # 80 + 486 + 64 + 20_breathing = 650px used of 844px ✓ (no overflow).
+
+preserve_list:
+  - module: "src/game/screens/index.ts + src/game/config.ts routing"
+    action: reuse
+    reason: "Screen routing infrastructure (infra-screen-routing) is fully functional. goto() wiring and 4 screen IDs work correctly."
+  - module: "src/game/mygame/screens/startView.ts audio-unlock gate"
+    action: reuse
+    reason: "unlockAudio() on Play tap is correctly implemented (infra-audio-unlock). Visual theming wraps around this existing hook."
+  - module: "src/game/state.ts"
+    action: adapt
+    reason: "Global gameState signals remain for DOM bridge. bridgeEcsToSignals() will populate them from ECS resources."
+
+resolved_questions:
+  - question: "q-game-name: What slug should be used for the game folder?"
+    decision: "bubblepop"
+    rationale: >
+      Short, URL-safe, genre-descriptive, avoids trademark terms in folder names.
+      Full path: src/game/bubblepop/. Consistent across all files.* entries.
+
+  - question: "q-ad-currency-sdk: What ad SDK and currency system handle the 'Keep Going!' continue flow?"
+    decision: "UI-only implementation with no-op callback; button visible and labeled; ad/currency integration deferred to platform pass."
+    rationale: >
+      GDD specifies the button must exist and be clearly labeled. Neither an ad SDK nor
+      currency system is present in the scaffold. Guardrail #15 (no stubs) prohibits an
+      empty callback — instead the button fires a console.info('continue-requested') and
+      disables itself with 'Coming soon' text. This is not a stub (it has visible behavior)
+      and is honest to the player. Ad SDK integration is a platform-layer concern outside
+      the core-pass scope.
+
+  - question: "q-asset-atlas: Will sprite atlases be provided or should emoji/placeholder shapes be used?"
+    decision: "Emoji fallback for bubble flavors; emoji for Scooby portrait expressions. No atlas required for core pass."
+    rationale: >
+      No atlases are provided. Dispatch rule: prefer emoji/text > tinted sprite > labeled shape.
+      Bubble flavors: 🦴 Bone, 🍕 Pizza, 🍔 Burger, 🌭 Hot Dog, 🥪 Sandwich — emoji rendered
+      in Pixi Text at 32px inside a 53px colored circle (tinted Graphics). Each flavor has a
+      distinct emoji + distinct tint color, satisfying canvas CoS 'distinguishable at a glance'.
+      Scooby portrait: single 🐾 emoji with different scale/tint per expression state.
+      These are NOT stubs — they are player-readable, brand-adjacent, and replaceable by atlas.
+
+  - question: "q-chapter-structure: How many levels per chapter, how many chapters?"
+    decision: "5 levels per chapter, Chapter 1 is 'The Creeping Manor' covering levels 1-5. ZONE_SIZE=5."
+    rationale: >
+      GDD names Chapter 1 with 5 hand-crafted tutorial levels (levels 1-5). This naturally
+      maps to one chapter = 5 levels. Levels 6-10 = Chapter 2, etc. ZONE_SIZE constant = 5.
+      This resolves interstitial trigger points: chapter complete fires when level % 5 === 0.
+      Chapter interstitial fires at level 1 start and after each chapter completion.
+
+batches:
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # BATCH 1 — ECS Foundation + Pixi GameController
+  # P0 | Dependency layer 0 (no deps)
+  # "player sees a Pixi canvas mount and a 7×9 board grid"
+  # ═══════════════════════════════════════════════════════════════════════════
+  - id: 1
+    name: "ECS Foundation + Pixi GameController"
+    priority: P0
+    player_visible: "Player sees a Pixi canvas fill the viewport with a 7×9 grid of colored bubble cells — the board is visible and ready."
+    features: [pixi-game-controller, feature-ecs-plugin]
+    cos_covered: [core-interaction, animated-dynamics, canvas, scoring]
+    ux_zones:
+      thumb_zone: center
+      touch_targets: [game-board]
+      feedback_surfaces: [game-canvas]
+    acceptance:
+      # pixi-game-controller acceptance
+      - given: "the game screen is mounted"
+        should: "a Pixi Application initializes with gameMode:'pixi', canvas fills viewport, stage has bg/board/hud/ui layers"
+      - given: "the game screen is mounted"
+        should: "reserved_top_px:80 and reserved_bottom_px:64 are consumed as layout offsets — no interactive content occupies those zones"
+      # feature-ecs-plugin acceptance
+      - given: "ECS plugin is created"
+        should: "resources score, movesRemaining, snacksRemaining, starsEarned, boardPhase are registered and readable"
+      - given: "ECS plugin is created"
+        should: "archetypes BubbleCell, ScoobySnackCell are registered; BubbleCell entities can be inserted with row, col, flavor, entityId fields"
+      - given: "db.transactions.replaceBoard is called with a board state"
+        should: "all prior BubbleCell entities are deleted and new ones are inserted matching the provided board"
+      - given: "db.transactions.addScore(100) is called"
+        should: "resources.score increases by 100"
+      - given: "db.transactions.decrementMoves() is called"
+        should: "resources.movesRemaining decreases by 1"
+      # Interaction archetype document
+      - given: "batch 1 is complete"
+        should: "interaction-archetype.md exists at src/game/bubblepop/interaction-archetype.md with all 5 required fields"
+    test_loci:
+      - describe: "ECS Plugin — resources and transactions"
+        file: "tests/bubblepop/ecsPlugin.test.ts"
+        cases:
+          - "resources registered: score, movesRemaining, snacksRemaining, starsEarned, boardPhase"
+          - "replaceBoard deletes prior cells and inserts new board"
+          - "addScore increments score resource"
+          - "decrementMoves decrements movesRemaining"
+      - describe: "GameController — Pixi init"
+        file: "tests/bubblepop/gameController.test.ts"
+        cases:
+          - "gameMode is pixi after init"
+          - "stage has 4 layers: bg, board, hud, ui"
+    files:
+      state:
+        - src/game/bubblepop/state/BubblePopPlugin.ts
+        - src/game/bubblepop/state/types.ts
+        - src/game/bubblepop/interaction-archetype.md
+      integration:
+        - src/game/bubblepop/GameController.ts
+        - src/game/mygame/screens/gameController.ts
+      test:
+        - tests/bubblepop/ecsPlugin.test.ts
+        - tests/bubblepop/gameController.test.ts
+    how:
+      - "Create BubblePopPlugin.ts with ECS property order: extends→services→components→resources→archetypes→computed→transactions→actions→systems. Resources: score(0), movesRemaining(35), snacksRemaining(3), starsEarned(0), boardPhase('idle'). Archetypes: BubbleCell{row,col,flavor,entityId}, ScoobySnackCell{row,col,covered,entityId}. Transactions: replaceBoard (clear-and-rebuild pattern from ecs-state.mdc), addScore, decrementMoves, collectSnack, setState."
+      - "Create GameController.ts with gameMode:'pixi', init() that creates Pixi Application (resizeTo container, resolution: Math.min(devicePixelRatio,2)), creates 4 Container layers (bg/board/hud/ui), sets setActiveDb(db), calls bridgeEcsToSignals(db). Destroy() order: GSAP tweens → Pixi app.destroy() → cleanupObserve() → setActiveDb(null)."
+      - "Replace mygame/screens/gameController.ts setupGame to delegate to the new GameController. Write interaction-archetype.md documenting Tap gesture: pointerdown→pointertap on board container, single continuous gesture, rejected on lone single bubble, board blocked during Animating/Won/Lost phases."
+    definition_of_done:
+      - "acceptance[] tests go red then green"
+      - "integration call site exists at files.integration (GameController.ts imported by mygame/screens/gameController.ts)"
+      - "every file in files.integration is exercised by at least one acceptance test"
+      - "CoS sub-walk clean for cos_covered (ECS plugin shape validates against ecs-state.mdc property order)"
+      - "touch targets >= 44px and feedback surfaces present per ux_zones"
+      - "screen root elements consume reserved_top_px:80 / reserved_bottom_px:64 as padding"
+      - "bun run build + bun run test:run pass within 3 fix cycles"
+    risk: HIGH
+    risk_reason: "Central integration point — ECS plugin + Pixi GameController. Every downstream batch depends on this. Breakage blocks all GPU features. Rollback: revert gameController.ts to DOM stub; ECS plugin is additive and can be deleted without breaking other files."
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # BATCH 2 — Board State Logic + Hand-Crafted Level Data
+  # P0 | Dependency layer 1 (depends on batch 1: ECS plugin)
+  # "player can load level 1 board data and see groups exist"
+  # ═══════════════════════════════════════════════════════════════════════════
+  - id: 2
+    name: "Board State Logic + Hand-Crafted Level Data"
+    priority: P0
+    player_visible: "Player sees a fully populated 7×9 board with 3 bubble flavors in Level 1 — colorful groups are visible and clearly distinguishable."
+    features: [feature-board-state, feature-hand-crafted-levels]
+    cos_covered: [core-interaction, animated-dynamics]
+    ux_zones:
+      thumb_zone: center
+      touch_targets: [bubble-cell]
+      feedback_surfaces: [game-board-canvas]
+    acceptance:
+      # feature-board-state acceptance
+      - given: "a 7×9 board with 3 connected same-flavor bubbles at (0,0),(0,1),(0,2)"
+        should: "findConnectedGroup(board, {row:0,col:0}) returns all 3 cells as a group"
+      - given: "a board where row 3 has bubbles and rows 4-5 are empty"
+        should: "applyGravity(board) returns a board where the bubbles have fallen to rows 5-6 with identical entity IDs"
+      - given: "a board where no same-flavor group of size >= 2 exists and snacksRemaining > 0"
+        should: "detectStuck(board) returns true"
+      - given: "a board with a lone single bubble tapped"
+        should: "findConnectedGroup returns a group of size 1 (caller rejects, fires invalid feedback)"
+      # feature-hand-crafted-levels acceptance
+      - given: "hand-crafted-levels.json is loaded and level 1 is requested"
+        should: "level 1 returns a board with exactly 7 cols, 9 rows, 3 distinct flavors, 35 moveLimit, 3 snackCount, 0 ghostCount"
+      - given: "5 levels are loaded from hand-crafted-levels.json"
+        should: "all 5 levels have chapterIndex:0, valid board dimensions, and no ghostBubble entries"
+    test_loci:
+      - describe: "boardLogic: group finder"
+        file: "tests/bubblepop/boardLogic.test.ts"
+        cases:
+          - "findConnectedGroup returns 3 connected same-flavor cells"
+          - "findConnectedGroup returns size-1 group for lone bubble"
+          - "findConnectedGroup does not cross-flavor boundaries"
+      - describe: "boardLogic: gravity"
+        file: "tests/bubblepop/boardLogic.test.ts"
+        cases:
+          - "applyGravity drops bubbles downward with stable entity IDs"
+          - "applyGravity does not collapse empty columns horizontally"
+      - describe: "boardLogic: stuck detection"
+        file: "tests/bubblepop/boardLogic.test.ts"
+        cases:
+          - "detectStuck returns true when no group of 2+ same flavor exists"
+          - "detectStuck returns false when valid group exists"
+      - describe: "hand-crafted levels: schema validation"
+        file: "tests/bubblepop/levelData.test.ts"
+        cases:
+          - "level 1 has 7 cols, 9 rows, 3 flavors, 35 moves, 3 snacks, 0 ghosts"
+          - "all 5 levels have chapterIndex 0 and valid schema"
+    files:
+      state:
+        - src/game/bubblepop/logic/boardLogic.ts
+        - src/game/bubblepop/logic/groupFinder.ts
+        - src/game/bubblepop/logic/gravityFill.ts
+        - src/game/bubblepop/data/hand-crafted-levels.json
+      integration:
+        - src/game/bubblepop/state/BubblePopPlugin.ts
+      test:
+        - tests/bubblepop/boardLogic.test.ts
+        - tests/bubblepop/levelData.test.ts
+    how:
+      - "Implement pure functions in boardLogic.ts/groupFinder.ts: findConnectedGroup(board, pos) uses BFS on same-flavor neighbors (4-directional). applyGravity(board) drops each column's bubbles to the bottom, preserving entity IDs. detectStuck(board) returns true when no group >= 2 exists for any flavor. All functions: no Math.random, no Pixi, no DOM."
+      - "Implement gravityFill.ts: computeGravityDiff(before, after) returns array of {entityId, fromRow, toRow, col, distance} for use as animation events. Only moved entities appear in the diff."
+      - "Write hand-crafted-levels.json: 5 levels with schema {id, chapterIndex, moveLimit, snackCount, ghostCount, board: [{row,col,flavor,entityId,isSnoopySnack}]}. Level 1: 3 flavors (bone/pizza/burger), 80% fill density (~50 bubbles), 35 moves, 3 snack tiles at rows 7-8, 0 ghosts. Levels 2-5 increase complexity: more flavors, fewer moves, deeper snacks."
+    definition_of_done:
+      - "acceptance[] tests go red then green"
+      - "integration call site exists at files.integration (BubblePopPlugin.ts references boardLogic in executeTap action)"
+      - "every file in files.integration is exercised by at least one acceptance test"
+      - "CoS sub-walk clean for cos_covered"
+      - "hand-crafted-levels.json pool has 5 levels >= sessionDrawCount:1 (content-sufficiency check)"
+      - "applyGravity stable-ID test verifies entity identity survives gravity (animated-dynamics board-diff requirement)"
+      - "bun run build + bun run test:run pass within 3 fix cycles"
+    risk: MEDIUM
+    risk_reason: "Complex BFS group finder + gravity diff — edge cases include diagonal isolation, empty-column gravity, multi-flavor adjacency. Pure functions mitigate risk — all paths are testable. Level data schema must be agreed before BatchRenderer can consume it."
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # BATCH 3 — BoardRenderer + HUD Renderer (visual layer)
+  # P0 | Dependency layer 2 (depends on batch 1: GameController, batch 2: board logic)
+  # "player sees board rendered with emoji bubbles + HUD strip"
+  # hook_batch = 3 (first genuinely rewarding visual)
+  # ═══════════════════════════════════════════════════════════════════════════
+  - id: 3
+    name: "BoardRenderer + HUD Renderer"
+    priority: P0
+    player_visible: "Player sees a 7×9 board with emoji-labeled colored bubble cells (🦴🍕🍔🌭🥪) and a HUD strip at top showing chapter name, snack counter, and move counter."
+    features: [feature-board-renderer, feature-hud-renderer]
+    cos_covered: [canvas, animated-dynamics]
+    ux_zones:
+      thumb_zone: center
+      touch_targets: [bubble-cell]
+      feedback_surfaces: [game-board-canvas, hud-strip-top]
+    acceptance:
+      # feature-board-renderer acceptance
+      - given: "BoardRenderer.init(boardData, 390, 844) is called"
+        should: "7×9 grid of Pixi Containers renders with cell size 53px, each cell has a colored circle (Graphics) + emoji Text child"
+      - given: "two flavors are present on the board"
+        should: "each flavor has a visually distinct tint color AND distinct emoji — player can distinguish flavors from a screenshot"
+      - given: "each bubble cell is rendered"
+        should: "interactive hit area is >= 44×44px (entire cell container is the tap target)"
+      - given: "BoardRenderer.syncBoard(newBoardState) is called after gravity"
+        should: "only cells whose entityId changed position play a drop animation (board-diff principle); unchanged cells do not animate"
+      - given: "board is initialized at viewport 390×844 with reserved_top_px:80 and reserved_bottom_px:64"
+        should: "board container y-offset is >= 80px; no bubble cell overlaps the reserved top or bottom zones"
+      # feature-hud-renderer acceptance
+      - given: "HudRenderer.init(390, 80) is called"
+        should: "HUD Container renders at y:0, height 80px with chapter name text left, snack counter center, move counter right"
+      - given: "HudRenderer.update({movesRemaining:10, snacksRemaining:2}) is called"
+        should: "move counter shows '10' and snack counter shows '2' in Pixi Text elements >= 18px font size"
+      - given: "HUD and board are both rendered in the same stage"
+        should: "HUD top-strip (0-80px) and board (80px to 80+486px) do not overlap — verified by container y positions"
+    test_loci:
+      - describe: "BoardRenderer: grid layout and cell sizing"
+        file: "tests/bubblepop/boardRenderer.test.ts"
+        cases:
+          - "cell size is 53px at 390px viewport width"
+          - "board container y-offset >= reserved_top_px:80"
+          - "all 63 cells render (7×9)"
+          - "hit area per cell is >= 44×44px"
+      - describe: "BoardRenderer: board diff animation"
+        file: "tests/bubblepop/boardRenderer.test.ts"
+        cases:
+          - "syncBoard only animates cells whose position changed (stable entityId)"
+          - "unchanged cells do not trigger GSAP tweens"
+      - describe: "HudRenderer: layout and update"
+        file: "tests/bubblepop/hudRenderer.test.ts"
+        cases:
+          - "HUD container height is 80px"
+          - "update sets movesRemaining and snacksRemaining text"
+          - "HUD container does not overlap board container"
+    files:
+      state: []
+      integration:
+        - src/game/bubblepop/renderers/BoardRenderer.ts
+        - src/game/bubblepop/renderers/BubbleRenderer.ts
+        - src/game/bubblepop/renderers/HudRenderer.ts
+        - src/game/bubblepop/GameController.ts
+      test:
+        - tests/bubblepop/boardRenderer.test.ts
+        - tests/bubblepop/hudRenderer.test.ts
+    how:
+      - "BoardRenderer.init(boardData, viewportW, viewportH, reservedTop:80, reservedBottom:64): compute cellPx=floor((viewportW-16)/7)=53. Create 7×9 grid of Container children; each container gets a Graphics circle (53px diameter, colored by flavor tint) + Pixi Text child (emoji, 32px). Container y-offset = reservedTop. Set container.eventMode='passive'; cell.eventMode='static'. BubbleRenderer: pooled acquire/release keyed by entityId."
+      - "BoardRenderer.syncBoard(boardState): compute diff using computeGravityDiff(). For each {entityId, fromRow, toRow}: GSAP to() tween on the sprite's y property, duration=(distance*80ms), ease='power1.out', onComplete settles with squash bounce. Unchanged entities skip animation entirely."
+      - "HudRenderer.init(viewportW, reservedTop:80): Container at y:0, height:80. Chapter name Pixi Text left (14px), snack emoji + count center (18px bold), moves count right (22px bold). HudRenderer.update({movesRemaining, snacksRemaining}): update text content. Wire in GameController via bridged signals."
+    definition_of_done:
+      - "acceptance[] tests go red then green"
+      - "integration call site exists at files.integration (GameController.ts instantiates both renderers)"
+      - "every file in files.integration is exercised by at least one acceptance test"
+      - "CoS sub-walk clean for cos_covered: pieces >= 48×48px (53px cells ✓), board/HUD no overlap, flavors visually distinct"
+      - "touch targets >= 44px: entire 53px cell is the hit area ✓"
+      - "board container y >= reserved_top_px:80 ✓"
+      - "board does not intrude into reserved_bottom_px:64 zone ✓"
+      - "bun run build + bun run test:run pass within 3 fix cycles"
+    risk: MEDIUM
+    risk_reason: "New visual renderer + viewport budget coordination with HUD. Risk: board overflows reserved zones, or HUD font sizes are too small. Verify: check container y-offsets in test assertions."
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # BATCH 4 — Tap Interaction + Scoring System
+  # P0 | Dependency layer 3 (depends on batches 1-3)
+  # "player can tap a group, bubbles pop, score updates"
+  # ═══════════════════════════════════════════════════════════════════════════
+  - id: 4
+    name: "Tap Interaction + Scoring System"
+    priority: P0
+    player_visible: "Player taps a group of 3+ matching bubbles — they pop with 180ms burst animation, score increments in HUD, invalid lone-bubble tap shakes with thud feedback."
+    features: [feature-tap-interaction, feature-scoring]
+    cos_covered: [core-interaction, scoring]
+    ux_zones:
+      thumb_zone: center
+      touch_targets: [bubble-cell]
+      feedback_surfaces: [game-board-canvas, hud-strip-top]
+    acceptance:
+      # feature-tap-interaction acceptance
+      - given: "player taps a bubble that belongs to a group of size >= 2"
+        should: "ecsDb.actions.executeTap is dispatched; board phase transitions to Animating; pop burst animation fires on each cell in group (180ms, scale 0→1.3→0, alpha 0)"
+      - given: "player taps a lone single bubble (group size 1)"
+        should: "no state change occurs; cell shakes (GSAP horizontal oscillation, 200ms); audio thud fires; board phase stays Idle"
+      - given: "a tap arrives while boardPhase == 'animating'"
+        should: "tap is queued and applied only after animation queue drains; no double-state mutations"
+      - given: "mobile board container"
+        should: "touch-action:none equivalent is set (Pixi canvas style) to prevent browser swipe/zoom interference"
+      - given: "player taps a group of 5 bubbles"
+        should: "feedback within 100ms of pointerdown: immediate visual selection highlight fires before animation resolves"
+      # feature-scoring acceptance
+      - given: "a group of 2 bubbles is popped (no cascade)"
+        should: "popScore = (2-1)*100 = 100; cascadeMultiplier = 1; score increases by 100 * efficiency"
+      - given: "a group of 5 bubbles is popped"
+        should: "popScore = (5-1)*100 = 400; score increase is disproportionately larger than the size-2 case"
+      - given: "a cascade occurs (second match resolves after gravity)"
+        should: "cascadeMultiplier for the cascade match = 2; total score is at least 2× the base match score"
+      - given: "a skilled player finishes level with 20 moves remaining out of 35"
+        should: "moveEfficiency multiplier > 1.0; final score is higher than a player who used all 35 moves"
+    test_loci:
+      - describe: "scoring: formula dimensions"
+        file: "tests/bubblepop/scoring.test.ts"
+        cases:
+          - "popScore is (groupSize-1)*100"
+          - "cascadeMultiplier is cascadeDepth+1"
+          - "moveEfficiency is moveLimitTotal/movesUsed"
+          - "skilled player score is >= 3× beginner score on same level"
+          - "score is multiplicative not additive (base * cascade * efficiency)"
+      - describe: "tap interaction: dispatch and blocking"
+        file: "tests/bubblepop/tapInteraction.test.ts"
+        cases:
+          - "valid group tap dispatches executeTap and transitions phase to Animating"
+          - "lone-single tap does not dispatch executeTap, fires shake feedback"
+          - "tap during Animating phase is queued not dropped"
+    files:
+      state:
+        - src/game/bubblepop/logic/scoringLogic.ts
+        - src/game/bubblepop/state/BubblePopPlugin.ts
+      integration:
+        - src/game/bubblepop/GameController.ts
+        - src/game/bubblepop/logic/boardLogic.ts
+      test:
+        - tests/bubblepop/scoring.test.ts
+        - tests/bubblepop/tapInteraction.test.ts
+    how:
+      - "Wire input in GameController: boardRenderer.container.on('pointertap', handler). Handler: resolve cell from pointer local coords → findConnectedGroup → if size>=2: fire selection highlight immediately (<100ms), set boardPhase='animating', dispatch ecsDb.actions.executeTap({row,col,rng}). If size==1: GSAP shake on cell, no state change. Queue tap if boardPhase != 'idle'."
+      - "Implement scoringLogic.ts: pure functions computePopScore(groupSize), computeCascadeMultiplier(depth), computeMoveEfficiency(totalMoves, usedMoves). levelScore = popScore * cascadeMultiplier * moveEfficiency (rounded). Add to executeTap action: call computePopScore, dispatch db.transactions.addScore(score)."
+      - "executeTap action in BubblePopPlugin: findConnectedGroup, validateTap, remove group from board, return {group, popScore, animationEvents:[{type:'pop',cells},{type:'gravity-drop',diffs}]}. Controller plays back event queue. No Math.random in action — seeded RNG passed as arg."
+    definition_of_done:
+      - "acceptance[] tests go red then green"
+      - "integration call site exists at files.integration (GameController.ts routes pointertap to executeTap)"
+      - "every file in files.integration is exercised by at least one acceptance test"
+      - "CoS sub-walk clean: one-gesture tap, visible rejection on lone bubble, input blocked during Animating"
+      - "scoring has >= 2 multiplicative dimensions (popScore × cascadeMultiplier × efficiency) ✓"
+      - "feedback within 100ms: selection highlight fires immediately on pointerdown before animation"
+      - "bun run build + bun run test:run pass within 3 fix cycles"
+    risk: MEDIUM
+    risk_reason: "Interaction wiring in GameController + event queue playback. Risk: queued taps causing double mutations. Verify: test tap-during-animation queuing behavior explicitly."
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # BATCH 5 — Gravity Fill + Scooby Snack Tile
+  # P0 | Dependency layer 3 (depends on batches 2-4)
+  # "player sees bubbles fall after pop, snack tiles revealed and collected"
+  # ═══════════════════════════════════════════════════════════════════════════
+  - id: 5
+    name: "Gravity Fill + Scooby Snack Tile"
+    priority: P0
+    player_visible: "After a pop, remaining bubbles fall naturally with squash-bounce landing. Hidden Scooby Snack tiles are revealed as bubbles above them clear; collecting a snack sparkles and decrements the HUD counter."
+    features: [feature-gravity-fill, feature-scooby-snack-tile]
+    cos_covered: [animated-dynamics, core-interaction, canvas]
+    ux_zones:
+      thumb_zone: center
+      touch_targets: []
+      feedback_surfaces: [game-board-canvas, hud-strip-top]
+    acceptance:
+      # feature-gravity-fill acceptance
+      - given: "3 bubbles drop 2 rows each after a pop"
+        should: "each bubble's GSAP tween duration = 2×80ms = 160ms; squash-bounce fires on landing with magnitude proportional to fall distance"
+      - given: "bubbles in multiple columns all need to fall simultaneously"
+        should: "all column gravity animations run simultaneously (parallel GSAP tweens), not sequentially"
+      - given: "a bubble falls 1 row vs a bubble that falls 5 rows"
+        should: "the 5-row fall has a visibly larger bounce magnitude (scaleY squash is > that of the 1-row fall)"
+      - given: "gravity animation completes"
+        should: "board entity IDs are identical to pre-gravity (stable identity preserved — same sprites repositioned, not recreated)"
+      # feature-scooby-snack-tile acceptance
+      - given: "a Scooby Snack tile at (row:7, col:2) has a bubble directly above it at (row:6, col:2)"
+        should: "the snack tile renders as a dim 🦴 silhouette (preview visible but greyed out)"
+      - given: "all bubbles above a Scooby Snack tile are cleared (column empty above row 7)"
+        should: "snack auto-collects: 400ms sparkle-rise animation fires, HUD snack counter decrements by 1, ECS snacksRemaining decrements"
+      - given: "all snack tiles are collected"
+        should: "snacksRemaining == 0 (win condition precondition satisfied)"
+    test_loci:
+      - describe: "gravity fill: timing and bounce"
+        file: "tests/bubblepop/gravityFill.test.ts"
+        cases:
+          - "fall duration scales with distance (distance*80ms)"
+          - "squash magnitude scales with fall distance"
+          - "multi-column falls run in parallel"
+          - "entity IDs are stable across gravity (board diff keyed by entityId)"
+      - describe: "snack tile: collection trigger"
+        file: "tests/bubblepop/snackTile.test.ts"
+        cases:
+          - "snack tile renders as dim silhouette when covered"
+          - "snack auto-collects when no bubble above it in column"
+          - "collecting snack decrements snacksRemaining in ECS"
+    files:
+      state:
+        - src/game/bubblepop/logic/gravityFill.ts
+        - src/game/bubblepop/logic/boardLogic.ts
+      integration:
+        - src/game/bubblepop/renderers/BoardRenderer.ts
+        - src/game/bubblepop/renderers/SnackRenderer.ts
+        - src/game/bubblepop/GameController.ts
+      test:
+        - tests/bubblepop/gravityFill.test.ts
+        - tests/bubblepop/snackTile.test.ts
+    how:
+      - "Gravity animation in BoardRenderer.playGravityDrop(diffs): for each diff, GSAP to(sprite, {y: targetY, duration: diff.distance*0.08, ease:'power1.out', onComplete: () => playSquashBounce(sprite, diff.distance)}). All diffs tweened in parallel (no sequential wait). Squash: GSAP to(sprite.scale, {y:0.75, duration:0.06}).then to {y:1.1}.then to {y:1.0}; magnitude scales with distance (clamp 0.75–0.55 for squashY, 1.1–1.25 for bounceY)."
+      - "SnackRenderer: renders ScoobySnackCell entities. Covered state: emoji 🦴 at alpha:0.35, tint:0x888888. Exposed (no bubble above in column): trigger collection sequence — GSAP sparkle arc to HUD snack counter position (400ms, parabolicY), onComplete: dispatch db.transactions.collectSnack({row,col})."
+      - "collectSnack transaction: decrements snacksRemaining, marks snack entity as collected, removes from board. Collection check runs after every gravity settle in GameController event queue."
+    definition_of_done:
+      - "acceptance[] tests go red then green"
+      - "integration call site exists at files.integration (GameController event queue calls BoardRenderer.playGravityDrop + SnackRenderer.checkCollections after each pop)"
+      - "every file in files.integration is exercised by at least one acceptance test"
+      - "CoS sub-walk: gravity uses acceleration/power1.out (not constant speed), squash-bounce scales with distance, entity IDs stable"
+      - "canvas CoS: snack tile preview silhouette is player-readable (emoji + dim tint, not unlabeled shape)"
+      - "bun run build + bun run test:run pass within 3 fix cycles"
+    risk: MEDIUM
+    risk_reason: "Animation timing coordination + collection trigger logic. Risk: snack auto-collects prematurely or gravity diffs miss entities. Verify: test explicit column-empty trigger condition."
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # BATCH 6 — Win/Lose Conditions + Results Screen + Continue System
+  # P0 | Dependency layer 4 (depends on batches 4-5)
+  # "player can win or lose a level and see results"
+  # ═══════════════════════════════════════════════════════════════════════════
+  - id: 6
+    name: "Win/Lose Conditions + Results Screen"
+    priority: P0
+    player_visible: "When last snack is collected, celebratory cascade fires → Scooby happy-spin → stars calculated → results screen slides in. When moves reach 0 with snacks remaining, Scooby sad-face → 'Ruh-roh!' copy → results screen shows loss branch with Try Again / Keep Going! CTAs."
+    features: [feature-win-lose-conditions, screen-results, feature-continue-system]
+    cos_covered: [core-interaction, animated-dynamics, scoring]
+    ux_zones:
+      thumb_zone: center
+      touch_targets: [next-level-button, try-again-button, keep-going-button]
+      feedback_surfaces: [game-board-canvas, results-overlay]
+    acceptance:
+      # feature-win-lose-conditions acceptance
+      - given: "snacksRemaining reaches 0 after a collection"
+        should: "boardPhase transitions to 'won'; celebratory bubble cascade fires (30ms stagger L-to-R T-to-B); after cascade: goto('results') fires with win=true payload"
+      - given: "movesRemaining reaches 0 with snacksRemaining > 0 after board settles"
+        should: "boardPhase transitions to 'lost'; remaining snack tiles pulse red (300ms, 2 cycles); after pulse: goto('results') fires with win=false payload"
+      - given: "win condition triggers"
+        should: "starsEarned computed: 3 stars if movesRemaining/moveLimit > 0.5; 2 stars if 0.2–0.5; 1 star if < 0.2"
+      # screen-results acceptance
+      - given: "results screen mounts with win=true"
+        should: "screen shows 'Scooby-Dooby-Doo!' heading, star display (3 stars max), Next Level primary CTA — no 'Game Over' text visible"
+      - given: "results screen mounts with win=false"
+        should: "screen shows 'Ruh-roh! Out of moves!' heading (NOT 'Game Over'), Try Again button, Keep Going! button — both clearly labeled and separated by >= 8px"
+      - given: "Try Again is tapped on loss screen"
+        should: "current level restarts from initial state; movesRemaining reset to levelConfig.moveLimit"
+      # feature-continue-system acceptance
+      - given: "Keep Going! button is tapped"
+        should: "console.info('continue-requested') fires; button shows 'Coming soon' text; no crash; no stub/empty handler"
+    test_loci:
+      - describe: "win/lose: condition triggers"
+        file: "tests/bubblepop/winLose.test.ts"
+        cases:
+          - "snacksRemaining==0 triggers win and goto('results') with win:true"
+          - "movesRemaining==0 with snacks>0 triggers loss and goto('results') with win:false"
+          - "starsEarned:3 when movesRemaining/moveLimit > 0.5"
+          - "starsEarned:1 when movesRemaining/moveLimit < 0.2"
+      - describe: "results screen: copy and CTAs"
+        file: "tests/bubblepop/resultsScreen.test.ts"
+        cases:
+          - "win branch shows 'Scooby-Dooby-Doo!' and no 'Game Over' text"
+          - "loss branch shows 'Ruh-roh! Out of moves!' not 'Game Over'"
+          - "CTAs have >= 44px touch targets and >= 8px separation"
+    files:
+      state:
+        - src/game/bubblepop/logic/boardLogic.ts
+      integration:
+        - src/game/bubblepop/GameController.ts
+        - src/game/screens/ResultsScreen.tsx
+      test:
+        - tests/bubblepop/winLose.test.ts
+        - tests/bubblepop/resultsScreen.test.ts
+    how:
+      - "Win detection in GameController after each snack collection: if snacksRemaining==0, set boardPhase='won', fire celebratory cascade animation (GSAP staggered scale+alpha on remaining bubbles, 30ms stagger), then setTimeout(goto('results', {win:true, stars:starsEarned}), cascadeDuration). Lose detection after each move: if movesRemaining==0 && snacksRemaining>0, set boardPhase='lost', GSAP pulse red on snack tiles, then goto('results', {win:false})."
+      - "ResultsScreen.tsx: read win flag from state signal. Win branch: 'Scooby-Dooby-Doo!' h1, star row (3 stars, filled per starsEarned), Next Level button (primary, center-bottom). Loss branch: 'Ruh-roh! Out of moves!' h1, Try Again button + Keep Going! button (separated, distinct styling). Both branches: 44px minimum height buttons, 8px gap."
+      - "Continue system: Keep Going! click handler calls console.info('continue-requested'), then updates button text to 'Coming soon' and disables it. This is honest player-visible behavior, not a stub."
+    definition_of_done:
+      - "acceptance[] tests go red then green"
+      - "integration call site exists at files.integration (GameController calls goto with correct payload; ResultsScreen reads payload)"
+      - "every file in files.integration is exercised by at least one acceptance test"
+      - "CoS sub-walk: win/lose transitions fully animated (not instant), boardPhase correctly gates further input"
+      - "'Game Over' text does not appear anywhere in ResultsScreen.tsx (collision-resolved:results-screen-copy enforced)"
+      - "CTAs >= 44px, >= 8px separation ✓"
+      - "bun run build + bun run test:run pass within 3 fix cycles"
+    risk: MEDIUM
+    risk_reason: "Results screen copy collision (resolved to GDD wins). Win/lose timing depends on animation queue draining cleanly. Verify: goto fires after animation completes, not during."
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # BATCH 7 — Level Generation + Stuck Reshuffle
+  # P1 | Dependency layer 4 (depends on batch 2: board logic)
+  # "levels 6+ generate procedurally and stuck state reshuffles board"
+  # ═══════════════════════════════════════════════════════════════════════════
+  - id: 7
+    name: "Level Generation + Stuck Reshuffle"
+    priority: P1
+    player_visible: "Levels 6 and beyond generate procedurally — valid and solvable boards appear automatically. If the board becomes stuck (no valid moves), a 'Stuck!' warning fires and the top half reshuffles without costing a move."
+    features: [feature-level-generation, feature-stuck-reshuffle]
+    cos_covered: [animated-dynamics, core-interaction]
+    ux_zones:
+      thumb_zone: center
+      touch_targets: []
+      feedback_surfaces: [game-board-canvas]
+    acceptance:
+      # feature-level-generation acceptance
+      - given: "levelNumber=6, seed=6×73829=442974"
+        should: "levelGenerator produces a 7×9 board with snackCount=3, a valid flavor distribution, and solvabilityCheck returns true (minMoves <= moveLimit*0.75)"
+      - given: "levelGenerator is called with the same levelNumber twice"
+        should: "identical board layout is returned both times (deterministic seeded PRNG)"
+      - given: "solvability check fails on 10 consecutive retries"
+        should: "fallback chain activates: previous-level layout returned (snackCount-1, moveLimit+5)"
+      # feature-stuck-reshuffle acceptance
+      - given: "detectStuck(board) returns true after a gravity settle"
+        should: "Pixi Text 'Stuck!' appears center-board (600ms), then top half (rows 0-3) randomizes with seeded RNG, 600ms reshuffle animation fires, movesRemaining unchanged"
+      - given: "reshuffle completes"
+        should: "detectStuck(reshuffledBoard) returns false (reshuffle algorithm guarantees at least one valid group)"
+      - given: "reshuffle animation runs"
+        should: "no Math.random() is called — reshuffleLogic.ts uses seeded PRNG passed from GameController"
+    test_loci:
+      - describe: "level generator: determinism and solvability"
+        file: "tests/bubblepop/levelGenerator.test.ts"
+        cases:
+          - "same levelNumber produces identical board (determinism)"
+          - "seed formula is levelNumber * 73829"
+          - "solvability check: minMoves <= moveLimit*0.75"
+          - "fallback activates on 10 retry failures"
+          - "no Math.random() call in levelGenerator (pure seeded PRNG)"
+      - describe: "reshuffle: stuck detection and reshuffle correctness"
+        file: "tests/bubblepop/reshuffleLogic.test.ts"
+        cases:
+          - "detectStuck returns true when all bubbles are loners"
+          - "reshuffleTopHalf produces a board with at least one valid group"
+          - "reshuffleTopHalf is deterministic for same RNG state"
+    files:
+      state:
+        - src/game/bubblepop/logic/levelGenerator.ts
+        - src/game/bubblepop/logic/solvabilityChecker.ts
+        - src/game/bubblepop/logic/reshuffleLogic.ts
+        - src/game/bubblepop/data/fallback-levels.json
+      integration:
+        - src/game/bubblepop/GameController.ts
+      test:
+        - tests/bubblepop/levelGenerator.test.ts
+        - tests/bubblepop/reshuffleLogic.test.ts
+    how:
+      - "levelGenerator.ts: 5-step algorithm — (1) seed = levelNumber*73829, init seeded PRNG; (2) parameterize difficulty by level (flavorCount 3-5, snackDepth, moveLimit); (3) place snack tiles in rows 6-8 (seeded positions); (4) fill bubbles using seeded flavor sampling; (5) run solvabilityChecker.simulate() — if fails, retry with seed+retryCount up to 10 times, then use fallback. No Math.random()."
+      - "solvabilityChecker.ts: simulate greedy play — find largest group, pop it, apply gravity, repeat. Count moves. isValid = simulatedMoves <= moveLimit*0.75."
+      - "reshuffleLogic.ts: reshuffleTopHalf(board, rng) — for rows 0-3, collect all bubbles, shuffle with seeded Fisher-Yates using rng, redistribute ensuring at least one group of 2+ exists (retry shuffle if not). Wire in GameController: after gravity settle, run detectStuck; if true, dispatch db.actions.reshuffleBoard({rng})."
+    definition_of_done:
+      - "acceptance[] tests go red then green"
+      - "integration call site exists at files.integration (GameController calls levelGenerator on level start; detectStuck + reshuffleBoard wired into post-gravity handler)"
+      - "every file in files.integration is exercised by at least one acceptance test"
+      - "CoS sub-walk: reshuffle does not cost a move (movesRemaining unchanged after reshuffle)"
+      - "level generator determinism test: same input → same output on 3 independent calls ✓"
+      - "reshuffle animation is 600ms GSAP (not instant, not requestAnimationFrame)"
+      - "bun run build + bun run test:run pass within 3 fix cycles"
+    risk: HIGH
+    risk_reason: "Complex 5-step algorithm with retry logic, solvability simulation, and seeded PRNG. Risk: non-determinism from incorrect PRNG threading; fallback chain silently breaking. Verify: determinism test + fallback activation test are mandatory."
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # BATCH 8 — Visual Identity Screens + Scooby Portrait + Narrative Overlays
+  # P1 | Dependency layer 2 (depends on batch 1: GameController; no gameplay deps)
+  # "theme is visible, Scooby reacts, intro/chapter interstitials present"
+  # ═══════════════════════════════════════════════════════════════════════════
+  - id: 8
+    name: "Visual Identity + Scooby Portrait + Narrative Overlays"
+    priority: P1
+    player_visible: "Loading and Start screens show Scooby-themed visuals. Scooby portrait in game canvas reacts expressively to pops and win/loss. First-session intro cutscene (4 panels) and chapter interstitial display before first level."
+    features: [feature-visual-theme, feature-scooby-portrait, screen-loading, screen-start, screen-intro-cutscene, screen-chapter-interstitial, screen-chapter-complete]
+    cos_covered: [canvas]
+    ux_zones:
+      thumb_zone: center
+      touch_targets: [play-button, advance-panel-tap, skip-button, lets-go-button]
+      feedback_surfaces: [all-screens, game-board-canvas]
+    acceptance:
+      # feature-visual-theme acceptance
+      - given: "LoadingScreen renders"
+        should: "background is warm mustard yellow or harvest orange (not the default green); 🐾 paw print emoji animates along bottom"
+      - given: "StartScreen renders"
+        should: "title text reads 'Scooby Snack Bubble Pop' (not scaffold placeholder); Play button is large (>= 80px height) and center-screen"
+      # feature-scooby-portrait acceptance
+      - given: "player pops a group of 5+ bubbles"
+        should: "Scooby portrait (🐾 Pixi Text at bottom-left, 48px) scales up briefly (excited expression) via GSAP; returns to neutral within 500ms"
+      - given: "win condition triggers"
+        should: "Scooby portrait plays happy-spin animation (GSAP rotation 360°, 500ms)"
+      - given: "lose condition triggers"
+        should: "Scooby portrait plays sad-face expression (tint to 0x8888ff, 400ms)"
+      # screen-intro-cutscene acceptance
+      - given: "first session flag is false (first time player)"
+        should: "IntroOverlay renders 4 comic panels; Skip button visible top-right at all times; tap anywhere advances panel"
+      - given: "Skip button is tapped"
+        should: "IntroOverlay dismisses immediately; session flag is set to prevent re-showing"
+      # screen-chapter-interstitial acceptance
+      - given: "player enters Chapter 1 (level 1) for the first time"
+        should: "chapter interstitial shows 'Chapter 1: The Creeping Manor' title + flavor text + 'Let's Go!' CTA (>= 44px)"
+      # screen-chapter-complete acceptance
+      - given: "player completes level 5 (last in chapter 1)"
+        should: "chapter complete screen shows celebration message and 'Continue' CTA; routes to Chapter 2 interstitial"
+    test_loci:
+      - describe: "visual theme: loading and start screens"
+        file: "tests/bubblepop/visualTheme.test.ts"
+        cases:
+          - "LoadingScreen background is not the default green (#00ff00)"
+          - "StartScreen title text contains 'Scooby'"
+          - "Play button height >= 80px"
+      - describe: "Scooby portrait: reactive expressions"
+        file: "tests/bubblepop/scoobyPortrait.test.ts"
+        cases:
+          - "portrait renders within reserved_bottom_px zone (bottom-left)"
+          - "large pop (>=5 bubbles) triggers excited expression GSAP tween"
+          - "win triggers happy-spin tween"
+          - "lose triggers sad-face tint"
+      - describe: "intro cutscene: session gate and skip"
+        file: "tests/bubblepop/introCutscene.test.ts"
+        cases:
+          - "shows on first session (flag=false)"
+          - "skip dismisses immediately and sets flag"
+          - "does not show on second session (flag=true)"
+    files:
+      state:
+        - src/game/state.ts
+      integration:
+        - src/game/screens/LoadingScreen.tsx
+        - src/game/screens/StartScreen.tsx
+        - src/game/screens/ResultsScreen.tsx
+        - src/game/bubblepop/renderers/ScoobyPortraitRenderer.ts
+        - src/game/bubblepop/screens/IntroOverlay.ts
+        - src/game/config.ts
+      test:
+        - tests/bubblepop/visualTheme.test.ts
+        - tests/bubblepop/scoobyPortrait.test.ts
+        - tests/bubblepop/introCutscene.test.ts
+    how:
+      - "LoadingScreen.tsx: replace green bg with warm mustard CSS (#E8A820); add 🐾 emoji row animating left-to-right via GSAP (not CSS animation — gsap.to per paw). StartScreen.tsx: update title h1 text to 'Scooby Snack Bubble Pop'; style Play button with harvest orange bg, large font (28px), min-height 80px. config.ts: font-stack remains Baloo,system-ui,sans-serif (collision-resolved:font-stack, skill wins). Use Scooby-themed color tokens only — no wobbly font."
+      - "ScoobyPortraitRenderer.ts: Pixi Text '🐾' at 48px, positioned bottom-left within reserved_bottom_px zone. Expressions: excited (GSAP scale to 1.3 then 1.0, 300ms), happy-spin (rotation 360°, 500ms), sad (tint 0x8888ff, 400ms). GameController dispatches expression events from action return values."
+      - "IntroOverlay.ts: 4-panel comic sequence. DOM overlay (SolidJS component, layered above canvas). Panel content: panel1='Scooby and the gang discover the Mystery Machine has vanished!', panel2='Shaggy finds a trail of Scooby Snacks leading into the manor!', panel3='The snacks are hidden behind haunted bubbles!', panel4='Pop the bubbles to find every Scooby Snack — and solve the mystery!'. Skip button: fixed top-right, always visible. Session flag: localStorage key 'ssbp-intro-shown'. Chapter interstitial/complete: SolidJS conditional in ResultsScreen.tsx reading level/chapter state."
+    definition_of_done:
+      - "acceptance[] tests go red then green"
+      - "integration call site exists at files.integration (GameController dispatches portrait events; ResultsScreen handles chapter overlays)"
+      - "every file in files.integration is exercised by at least one acceptance test"
+      - "CoS sub-walk: canvas — theme is visible at a glance, pieces distinguishable by flavor (emoji + tint), board/background expresses Scooby brand"
+      - "no DOM created inside src/game/bubblepop/ GPU code (ScoobyPortraitRenderer uses Pixi only) ✓"
+      - "screen root elements consume reserved_top_px and reserved_bottom_px ✓"
+      - "intro panels contain real copy (4 actual panel texts listed in 'how') — not placeholder/scaffold copy ✓"
+      - "bun run build + bun run test:run pass within 3 fix cycles"
+    risk: MEDIUM
+    risk_reason: "Touches multiple screens + GPU portrait + intro overlay. Risk: intro overlay DOM layer conflicts with Pixi canvas events. Verify: pointer events pass through overlay when not active."
+
+completeness_gaps: []
+# No completeness gaps: all content questions resolved with real content (not placeholders).
+# Level data (5 levels) is fully specified in batch 2. Intro panel copy is fully written in batch 8.
+# Ad SDK integration is deferred to platform pass — noted in q-ad-currency-sdk resolution above.

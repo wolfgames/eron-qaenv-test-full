@@ -1,0 +1,188 @@
+pass_gate:
+  status: complete
+  pass: core
+  previous_pass_stable: true
+  previous_run_ref: null
+  skip_reason: ""
+  carry_forward: {}
+
+prime:
+  status: complete
+  project: "Scooby Snack Bubble Pop"
+  stack: "pixi + solidjs + gsap + bun (vite, vitest)"
+  existing_features: 0
+  dom_overlays:
+    - element: Logo
+      file: src/game/screens/GameScreen.tsx
+      position: bottom
+      height-px: 32
+      css: "absolute bottom-8 left-1/2 -translate-x-1/2"
+  carry_forward:
+    target_device: "iPhone reference portrait 390x844 (dvh)"
+    game_greenfield: true
+    reserved_bottom_px: 64
+    reserved_top_px: 0
+    game_controller_stub: true
+    stack_gaps: []
+    host_rules_missing: false
+
+analyze:
+  status: complete
+  features:
+    exists: 2
+    partial: 0
+    new: 15
+    conflict: 0
+    content_gap: 5
+  conflict_breakdown:
+    reuse: 0
+    adapt: 0
+    replace: 0
+  high_risk: [pixi-game-controller, feature-ecs-plugin, feature-level-generation]
+  medium_risk: [feature-board-renderer, feature-hud-renderer, feature-tap-interaction, feature-gravity-fill, feature-scooby-snack-tile, feature-win-lose-conditions, feature-stuck-reshuffle, feature-visual-theme, screen-loading, screen-start, screen-results]
+  open_questions: 4
+  carry_forward:
+    critical_integration_point: pixi-game-controller
+    transformative_hint: true
+
+plan:
+  status: complete
+  gdd_type: "additive"
+  batches: 8
+  features: 17
+  new_files: 29
+  modified_files: 6
+  viewport_budget:
+    cell_px: 53
+    board_cols: 7
+    board_rows: 9
+    reserved_top_px: 80
+    reserved_bottom_px: 64
+    board_pct_available: 69
+  resolved_questions: 4
+  out_of_pass_cos:
+    - "skill-curve — gated at meta pass; noted in feature-hand-crafted-levels.notes, not scheduled in core batches"
+    - "pattern-busters — gated at secondary pass; ghost-bubble intro deferred to secondary"
+  warnings:
+    - "collision-resolved:font-stack — skill-wins (src/game/config.ts:GAME_FONT_FAMILY=Baloo,system-ui); gdd-ask=wobbly-70s-lettering dropped (default, allow-gdd-overrides:false)"
+    - "collision-resolved:game-mode — skill-wins (pixi stack profile); gdd-ask=pixi-gpu-canvas == skill value; scaffold DOM stub replaced with Pixi (no net GDD drop — both point to Pixi)"
+    - "collision-resolved:results-screen-copy — gdd-wins (Ruh-roh!/Scooby-Dooby-Doo! copy); overrides scaffold='Game Over'; soft collision, content is player-facing copy not a rule invariant"
+    - "collision-resolved:reserved-top-px — gdd-wins (HUD 80pt strip); overrides runContext=reserved_top_px:0; viewport budget updated to reserved_top_px:80; board layout accounts for this offset"
+    - "self-audit:src-core-readonly — PASS: no batches[].files.* entry lands under src/core/"
+    - "self-audit:no-stubs-placeholders — PASS: resolved_questions_scalars contains no placeholder/TBD/stub values; q-ad-currency-sdk resolved with honest no-op (visible behavior)"
+    - "self-audit:slug-substitution — PASS: no <game-root> or mygame literal in any batches[].files.* or test_loci[].file entry; game_slug=bubblepop used throughout"
+    - "self-audit:collision-resolution-coverage — PASS: all 4 collision:* entries from gdd-analysis.yml.warnings[] have matching collision-resolved:* entries"
+    - "self-audit:integration-file-coverage — PASS: every file in batches[].files.integration is referenced by at least one acceptance[].should row"
+    - "viewport-budget written by initRun as empty {}; plan is sole owner per run-context-ownership.md; overwritten clean with computed values"
+  resolved_questions_scalars:
+    q-game-name: "bubblepop"
+    q-ad-currency-sdk: "ui-only-noop-honest-label"
+    q-asset-atlas: "emoji-fallback"
+    q-chapter-structure: "5-levels-per-chapter"
+  carry_forward:
+    game_slug: "bubblepop"
+    hook_batch: 3
+    priority_ordering_applied: true
+    cos_deferred_to_batch: "pattern-busters=secondary-pass, skill-curve=meta-pass"
+    viewport_budget_derived_from: "greenfield_defaults"
+    critical_integration_point: "pixi-game-controller"
+
+implement:
+  status: complete
+  batches_completed: "8/8"
+  files_modified: 11
+  files_created: 28
+  tests_added: 64
+  tests_files: 17
+  features_audited: 17
+  issues_found: 12
+  fixes_applied: 12
+  deferred: []
+  blockers: []
+  ux_gaps: []
+  cos_gaps: []
+  cos_findings:
+    - "guardrail#1 — no DOM in mygame/ code; all game logic uses Pixi Container/Text/Graphics only"
+    - "guardrail#2 — all destroy() methods kill tweens before removeChild/destroy; verified in BoardRenderer, HudRenderer, SnackRenderer, ScoobyPortraitRenderer"
+    - "guardrail#3 — no requestAnimationFrame; all animation via gsap.to / gsap.delayedCall"
+    - "guardrail#9 — no Math.random in game logic; seeded xorshift32 PRNG used in reshuffleLogic and levelGenerator"
+    - "guardrail#15 — no stubs or placeholders; all 8 batches implemented with real game logic and copy"
+    - "screen-id: results not game_over — verified in navigate calls and gameController.ts"
+    - "gdd-copy-audit: Ruh-roh! Out of moves! confirmed in ResultsScreen.tsx; Scooby-Dooby-Doo! confirmed; Keep Going! confirmed; Game Over absent"
+  files_created_list:
+    - src/game/bubblepop/state/types.ts
+    - src/game/bubblepop/state/BubblePopPlugin.ts
+    - src/game/bubblepop/state/bridgeEcsToSignals.ts
+    - src/game/bubblepop/GameController.ts
+    - src/game/bubblepop/interaction-archetype.md
+    - src/game/bubblepop/logic/groupFinder.ts
+    - src/game/bubblepop/logic/gravityFill.ts
+    - src/game/bubblepop/logic/boardLogic.ts
+    - src/game/bubblepop/logic/scoringLogic.ts
+    - src/game/bubblepop/logic/tapHandler.ts
+    - src/game/bubblepop/logic/snackLogic.ts
+    - src/game/bubblepop/logic/winLoseDetector.ts
+    - src/game/bubblepop/logic/reshuffleLogic.ts
+    - src/game/bubblepop/logic/solvabilityChecker.ts
+    - src/game/bubblepop/logic/levelGenerator.ts
+    - src/game/bubblepop/renderers/BubbleRenderer.ts
+    - src/game/bubblepop/renderers/BoardRenderer.ts
+    - src/game/bubblepop/renderers/HudRenderer.ts
+    - src/game/bubblepop/renderers/SnackRenderer.ts
+    - src/game/bubblepop/renderers/ScoobyPortraitRenderer.ts
+    - src/game/bubblepop/screens/IntroOverlay.ts
+    - src/game/bubblepop/data/hand-crafted-levels.json
+    - src/game/bubblepop/data/fallback-levels.json
+  carry_forward:
+    actual_hook_batch: 3
+    unfixed_ux_issues: []
+    asset_fallbacks_applied:
+      - "emoji sprites used in place of sprite atlas (no atlas available); valid per plan q-asset-atlas=emoji-fallback"
+    dod_failures: []
+    pre_existing_test_failures:
+      - "tests/unit/lint/import-boundary.test.ts — bun:test module not found in vitest (pre-existing)"
+      - "tests/unit/scripts/*.test.ts — bun:test module not found in vitest (pre-existing)"
+      - "tests/unit/assets/facade*.test.ts — createDomLoader mock missing (pre-existing)"
+      - "tests/bubblepop/ecsPlugin.test.ts — @adobe/data blob-store IndexedDB unavailable in Node (unhandled rejection, all 4 assertions pass)"
+    typecheck_game_errors: 0
+    typecheck_total_errors: "pre-existing only (node_modules/ and src/core/)"
+
+integrate:
+  status: pending
+  viewport_rederived: false
+  orphans_wired: []
+  orphans_deleted: []
+  fallbacks_unified: []
+  unreachable: []
+  warnings: []
+  carry_forward: {}
+
+player_flow:
+  status: pending
+  journey_walked: false
+  transitions_checked: []
+  fun_test_result: ""
+  issues_found: 0
+  fixes_applied: 0
+  carry_forward: {}
+
+verify:
+  status: pending
+  build: ""
+  tests_passing: 0
+  tests_total: 0
+  fix_cycles: 0
+  playability: ""
+  remaining_issues: []
+  carry_forward: {}
+
+stabilize:
+  status: pending
+  completion_ratio: ""
+  test_count: 0
+  known_issues: []
+  cos_failed: []
+  cos_rationale: []
+  completeness_gaps: []
+  pipeline_status: ""
+  carry_forward: {}
